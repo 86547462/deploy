@@ -219,3 +219,4 @@ showmount -e
 ```
 
 ![image-20240702165632944](D:\project\项目部署\jpg\image-20240702165632944.png)
+![image-20240702165632944.png](jpg%2Fimage-20240702165632944.png)
