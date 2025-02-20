@@ -1,0 +1,148 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: hcwl-seata
+  namespace: hcwl
+  labels:
+    app.kubernetes.io/name: hcwl-seata
+spec:
+  type: NodePort
+  ports:
+    - port: 8091
+      protocol: TCP
+      name: http8091
+      nodePort: 8091
+    - port: 7091
+      protocol: TCP
+      name: http7091
+      nodePort: 7091
+  selector:
+    app.kubernetes.io/name: hcwl-seata
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: hcwl
+  name: hcwl-seata
+data:
+  application.yml: |-
+    # Seata Server Application Config
+    server:
+      # Server listening port
+      port: 7091
+    spring:
+      application:
+        name: seata-server
+    logging:
+      config: classpath:logback-spring.xml
+      file:
+        path: ${user.home}/logs/seata
+      extend:
+        logstash-appender:
+          destination: 127.0.0.1:4560
+      kafka-appender:
+        bootstrap-servers: 127.0.0.1:9092
+        topic: logback_to_logstash
+    console:
+      user:
+        username: seata
+        password: seata
+    seata:
+      config:
+        type: nacos
+        nacos:
+          server-addr: hcwl-nacos:8848
+          namespace: prod
+          group: DEFAULT_GROUP
+          username: nacos
+          password: hongyang@2007
+          ##if use MSE Nacos with auth, mutex with username/password attribute
+          #access-key: ""
+          #secret-key: ""
+          data-id: seataServer.properties
+      registry:
+        type: nacos
+        nacos:
+          application: seata-server
+          server-addr: hcwl-nacos:8848
+          group: DEFAULT_GROUP
+          namespace: prod
+          cluster: default
+          username: nacos
+          password: hongyang@2007
+          ##if use MSE Nacos with auth, mutex with username/password attribute
+          #access-key: ""
+          #secret-key: ""
+      server:
+        service-port: 8091 #If not configured, the default is '${server.port} + 1000'
+        max-commit-retry-timeout: -1
+        max-rollback-retry-timeout: -1
+        rollback-retry-timeout-unlock-enable: false
+        enable-check-auth: true
+        enable-parallel-request-handle: true
+        retry-dead-threshold: 130000
+        xaer-nota-retry-timeout: 60000
+        recovery:
+          handle-all-session-period: 1000
+        undo:
+          log-save-days: 7
+          log-delete-period: 86400000
+        session:
+          branch-async-queue-size: 5000 #branch async remove queue size
+          enable-branch-async-remove: false #enable to asynchronous remove branchSession
+      security:
+        secretKey: SeataSecretKey0c382ef121d778043159209298fd40bf3850a017
+        tokenValidityInMilliseconds: 1800000
+        ignore:
+          urls: /,/**/*.css,/**/*.js,/**/*.html,/**/*.map,/**/*.svg,/**/*.png,/**/*.ico,/console-fe/public/**,/api/v1/auth/login
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hcwl-seata
+  namespace: hcwl # 替换为你的命名空间
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hcwl-seata
+  template:
+    metadata:
+      labels:
+        app: hcwl-seata
+    spec:
+      containers:
+        - name: hcwl-seata
+          image: seataio/seata-server:1.5.2
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+          env:
+            - name: SEATA_CONFIG_NAME
+              value: file:/seata-server/resources/application.yml # 注意这里的路径应与挂载路径一致
+          ports:
+            - name: http8091
+              containerPort: 8091
+              protocol: TCP
+            - name: http7091
+              containerPort: 7091
+              protocol: TCP
+          volumeMounts:
+            - name: seata-config-volume
+              mountPath: /seata-server/resources/application.yml
+              readOnly: true
+              subPath: application.yml
+      volumes:
+        - name: seata-config-volume
+          configMap:
+            name: hcwl-seata
+            items:
+              - key: application.yml
+                path: application.yml
+
+

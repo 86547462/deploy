@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: hcwl-job-admin
+  namespace: hcwl
+  labels:
+    app: hcwl-job-admin
+spec:
+  type: NodePort
+  ports:
+    - port: 9999
+      name: server
+      targetPort: 9999
+      nodePort: 9999
+  selector:
+    app: hcwl-job-admin
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: hcwl
+  name: hcwl-job-admin
+  labels:
+    app: hcwl-job-admin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hcwl-job-admin
+  template:
+    metadata:
+      labels:
+        app: hcwl-job-admin
+    spec:
+      imagePullSecrets:
+        - name: aliyun-registry-secret
+      nodeSelector:
+        node: "true"
+      containers:
+        - name: hcwl-job-admin
+          imagePullPolicy: Always
+          image: registry-vpc.cn-shenzhen.aliyuncs.com/k8s-hcwl-cloud/xxl-job-admin:latest
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          ports:
+            - containerPort: 9999
+              name: http9999
+              protocol: TCP
+              hostPort: 9999

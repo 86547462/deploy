@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: hcwl
+  name: hcwl-module-redisson
+  labels:
+    app: hcwl-module-redisson
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hcwl-module-redisson
+  template:
+    metadata:
+      labels:
+        app: hcwl-module-redisson
+    spec:
+      imagePullSecrets:
+        - name: aliyun-registry-secret
+      restartPolicy: Always
+      containers:
+        - name: hcwl-module-on-school
+          imagePullPolicy: Always
+          image: swr.cn-north-4.myhuaweicloud.com/zk-project/hcwl-module-redisson:latest
+          ports:
+            - containerPort: 9206
+              name: http9206
+              protocol: TCP
+              hostPort: 9206
+          volumeMounts:
+            - mountPath: /hcwl
+              name: nfs-volume
+              readOnly: false
+      volumes:
+        - name: nfs-volume
+          persistentVolumeClaim:
+            claimName: nfs-pvc

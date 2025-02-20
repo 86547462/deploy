@@ -1,0 +1,172 @@
+##统一设置service服务
+#gateway
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: hcwl
+  name: hcwl-gateway
+  labels:
+    app: hcwl-gateway
+spec:
+  type: NodePort
+  selector:
+    app: hcwl-gateway
+  ports:
+    - port: 8080
+      protocol: TCP
+      targetPort: 8080
+      nodePort: 8080
+##auth
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: hcwl
+  name: hcwl-auth
+  labels:
+    app: hcwl-auth
+spec:
+  type: NodePort
+  selector:
+    app: hcwl-auth
+  ports:
+    - port: 9200
+      protocol: TCP
+      targetPort: 9200
+##system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: hcwl
+  name: hcwl-module-system
+  labels:
+    app: hcwl-module-system
+spec:
+  type: NodePort
+  selector:
+    app: hcwl-module-system
+  ports:
+    - port: 9201
+      protocol: TCP
+      targetPort: 9201
+##cloud
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: hcwl
+  name: hcwl-module-cloud
+  labels:
+    app: hcwl-module-cloud
+spec:
+  type: NodePort
+  selector:
+    app: hcwl-module-cloud
+  ports:
+    - port: 9202
+      protocol: TCP
+      targetPort: 9202
+##stu
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: hcwl
+  name: hcwl-module-stu
+  labels:
+    app: hcwl-module-stu
+spec:
+  type: NodePort
+  selector:
+    app: hcwl-module-stu
+  ports:
+    - port: 9203
+      protocol: TCP
+      targetPort: 9203
+
+##education
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: hcwl
+  name: hcwl-module-education
+  labels:
+    app: hcwl-module-education
+spec:
+  type: NodePort
+  selector:
+    app: hcwl-module-education
+  ports:
+    - port: 9204
+      protocol: TCP
+      targetPort: 9204
+##on-school
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: hcwl
+  name: hcwl-module-on-school
+  labels:
+    app: hcwl-module-on-school
+spec:
+  type: NodePort
+  selector:
+    app: hcwl-module-on-school
+  ports:
+    - port: 9205
+      protocol: TCP
+      targetPort: 9205
+##redisson
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: hcwl
+  name: hcwl-module-redisson
+  labels:
+    app: hcwl-module-redisson
+spec:
+  type: NodePort
+  selector:
+    app: hcwl-module-redisson
+  ports:
+    - port: 9206
+      protocol: TCP
+      targetPort: 9206
+##workflow
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: hcwl
+  name: hcwl-module-workflow
+  labels:
+    app: hcwl-module-workflow
+spec:
+  type: NodePort
+  selector:
+    app: hcwl-module-workflow
+  ports:
+    - port: 9207
+      protocol: TCP
+      targetPort: 9207
+##finance
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: hcwl
+  name: hcwl-module-finance
+  labels:
+    app: hcwl-module-finance
+spec:
+  type: NodePort
+  selector:
+    app: hcwl-module-finance
+  ports:
+    - port: 9208
+      protocol: TCP
+      targetPort: 9208

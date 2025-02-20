@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: hcwl
+  name: hcwl-job-admin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hcwl-job-admin
+  template:
+    metadata:
+      labels:
+        app: hcwl-job-admin
+    spec:
+      containers:
+      - name: hcwl-job-admin
+        image: registry.cn-hangzhou.aliyuncs.com/zk_project/xxl-job-admin:2.3.1
+        imagePullPolicy: Always     # 优先使用本地镜像
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PARAMS   # 定义变量，用来接收sql的用户/密码 mysql为k8s集群内的service名称，在k8s集群内部可以直接使用service名称，因为集群默认做了coredns解析
+          value: "--spring.datasource.url=jdbc:mysql://rm-wz9k11xe4x3x65gq0jo.mysql.rds.aliyuncs.com:3306/xxl_job?Unicode=true&characterEncoding=UTF-8&useSSL=false --spring.datasource.username=root --spring.datasource.password=Hongyang@2007 --spring.mail.username=hongyangtd@163.com --spring.mail.password=QFAQPLFQZRZBMVWQ"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: hcwl
+  name: hcwl-job-admin
+  labels:
+    app: hcwl-job-admin
+spec:
+  ports:
+  type: NodePort
+  ports:
+  - port: 8080
+    targetPort: 8080
+    #对外暴露端口
+    nodePort: 9999
+    #protocol: TCP
+    #name: http
+  selector:
+    app: hcwl-job-admin

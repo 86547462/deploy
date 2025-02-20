@@ -1,0 +1,148 @@
+git_url = "https://codeup.aliyun.com/65791b094e02d56555c42113/HCWL.git"
+
+def HCWL_SERVICE_MAP = [:];
+HCWL_SERVICE_MAP.put("hcwl-gateway", "hcwl-gateway/");
+HCWL_SERVICE_MAP.put("hcwl-auth", "hcwl-auth/");
+HCWL_SERVICE_MAP.put("hcwl-module-cloud", "hcwl-modules/hcwl-module-cloud/");
+HCWL_SERVICE_MAP.put("hcwl-module-education", "hcwl-modules/hcwl-module-education/");
+HCWL_SERVICE_MAP.put("hcwl-module-finance", "hcwl-modules/hcwl-module-finance/");
+HCWL_SERVICE_MAP.put("hcwl-module-on-school", "hcwl-modules/hcwl-module-on-school/");
+HCWL_SERVICE_MAP.put("hcwl-module-redisson", "hcwl-modules/hcwl-module-redisson/");
+HCWL_SERVICE_MAP.put("hcwl-module-stu", "hcwl-modules/hcwl-module-stu/");
+HCWL_SERVICE_MAP.put("hcwl-module-system", "hcwl-modules/hcwl-module-system/");
+HCWL_SERVICE_MAP.put("hcwl-module-workflow", "hcwl-modules/hcwl-module-workflow/");
+HCWL_SERVICE_MAP.put("hcwl-module-job", "hcwl-modules/hcwl-module-job/");
+
+def createVersion() {
+    return new Date().format('yyyyMMddHHmmss') + "_${env.BUILD_ID}"
+}
+
+//仓库地址
+DOCKER_REGISTRY = 'registry-vpc.cn-shenzhen.aliyuncs.com'
+//仓库命名空间
+IMAGE_NAME_PREFIX = 'k8s-hcwl-cloud'
+//k8s主节点地址
+target_host = "192.168.0.100"
+
+pipeline {
+    
+    agent any
+    tools {
+            jdk 'jdk11' // 使用在全局工具配置中定义的JDK名称
+            maven 'maven-3.9.6'
+        }
+    environment {
+        _version = createVersion()
+    }
+    
+    stages {
+        
+        stage('环境检测') {
+            steps {
+                sh label: '',
+                script: '''
+                    git version
+                    java -version
+                    mvn -v
+                    docker -v
+                '''
+            }
+        }
+        
+        stage('获取代码') {
+            steps {
+                git branch: 'master', credentialsId: 'c854d5a1-c758-4d3c-a154-b7818ffac2cf', url: "${git_url}"
+            }
+        }
+        
+        stage('执行maven构建项目') {
+            steps {
+                sh label:'',
+                script:"""
+                    mvn clean package '-Dmaven.test.skip=true' -P prod
+                """
+            }
+        }
+        
+        stage('阿里云镜像登陆') {
+                    steps {
+                        withCredentials([usernamePassword(credentialsId: 'c24c387a-465e-42e2-9b33-36eaf941882a', usernameVariable: 'username', passwordVariable: 'password', variable: '容器镜像服务账号密码')]) {
+                            sh """
+                                docker login --username=${username} --password=${password} ${DOCKER_REGISTRY}
+                                echo '登陆成功'
+                            """
+                        }
+                    }
+                }
+        
+        stage('制作docker镜像'){
+            steps {
+                script {
+                    def selectedServices = params.SERVICE_TO_BUILD.tokenize(',')
+                    for (service in selectedServices) {
+                        //获取目录地址
+                        def serviceDirPath = HCWL_SERVICE_MAP[service]
+                        if(serviceDirPath){
+                            //镜像名称
+                            def imageName = "${DOCKER_REGISTRY}/${IMAGE_NAME_PREFIX}/${service}:${_version}"
+                            sh """
+                                cd ${serviceDirPath}
+                                docker build -f Dockerfile-k8s -t ${imageName} .
+                            """
+                        }else{
+                            echo "未能找到指定的服务"
+                        }
+                        
+                    }
+                }
+            }
+        }
+        
+        stage('执行镜像上传'){
+            steps {
+                script {
+                    def selectedServices = params.SERVICE_TO_BUILD.tokenize(',')
+                    for (service in selectedServices) {
+                        //获取目录地址
+                        def serviceDirPath = HCWL_SERVICE_MAP[service]
+                        if(serviceDirPath){
+                            //镜像名称  
+                            def imageName = "${DOCKER_REGISTRY}/${IMAGE_NAME_PREFIX}/${service}:${_version}"
+                            def imageLatest = "${DOCKER_REGISTRY}/${IMAGE_NAME_PREFIX}/${service}:latest"
+                            sh """
+                                docker push ${imageName}
+                                docker tag ${imageName} ${imageLatest}
+                                docker push ${imageLatest}
+                                docker rmi ${imageName}
+                                docker rmi ${imageLatest}
+                            """
+                        }
+                    }
+                }
+            }    
+        }
+        
+        stage('项目部署') {
+            stages {
+                stage('部署开始') {
+                steps {
+                withCredentials([usernamePassword(credentialsId: 'db389857-87c4-4074-82b0-e146550bef2f', passwordVariable: 'SSH_PASSWORD', usernameVariable: 'SSH_USERNAME', variable: '部署目标服务器账号密码')]) {   
+                    script{
+                        def selectedServices = params.SERVICE_TO_BUILD.tokenize(',')
+                        for (service in selectedServices) {
+                            sh """
+                                sshpass -p ${SSH_PASSWORD} ssh -tt -p 22 -o StrictHostKeyChecking=no ${SSH_USERNAME}@${target_host} << reallsh
+                                kubectl rollout restart deployment -n hcwl ${service}
+                                exit 0
+                            """
+                        }
+                    }
+                    
+                    
+                }
+                    }
+                }
+            }
+        }
+    }
+}

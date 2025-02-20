@@ -1,0 +1,493 @@
+git_branch = "*/master"
+git_timeout = "120"
+git_url = "http://192.168.0.122:8001/gitlab-instance-6af9e62b/hcwl-cloud.git"
+docker_url = "registry.cn-hangzhou.aliyuncs.com"
+docker_space = "zk_project"
+project_name_1 = "hcwl-gateway"
+project_name_2 = "hcwl-auth"
+project_name_3 = "hcwl-module-cloud"
+project_name_4 = "hcwl-module-finance"
+project_name_5 = "hcwl-module-job"
+project_name_6 = "hcwl-module-stu"
+project_name_7 = "hcwl-module-system"
+project_port_1 = "8080"
+project_port_2 = "9200"
+project_port_3 = "9204"
+project_port_4 = "9203"
+project_port_5 = "9998"
+project_port_6 = "9202"
+project_port_7 = "9201"
+// 部署目标服务器
+target_ip = "192.168.0.5"
+target_port = "22"
+target_user = "root"
+target_password = "hongyang@2007"
+
+def createVersion() {
+    return new Date().format('yyyyMMddHHmmss') + "_${env.BUILD_ID}"
+}
+
+pipeline {
+    agent any
+
+    environment {
+        _version = createVersion()
+    }
+
+    stages {
+
+        stage('环境检测') {
+            steps {
+                sh label: '',
+                script: '''
+                    whoami
+                    echo "Current time is: ${_version}"
+                    mvn -v
+                    git version
+                    java -version
+                    docker -v
+                '''
+            }
+        }
+        stage('代码获取') {
+            steps {
+                checkout([
+                $class: 'GitSCM',
+                branches: [[name: "${git_branch}"]],
+                extensions: [[
+                    $class: 'CloneOption', noTags: false, reference: '',
+                    shallow: false, timeout: "${git_timeout}"
+                ]],
+                userRemoteConfigs: [[credentialsId: "7f4a58cf-4349-477e-8c1b-cc04d3095267", url: "${git_url}"]]
+                ])
+            }
+        }
+
+        stage('项目构建') {
+            steps {
+                sh label:'',
+                script:"""
+                    mvn clean package install -Dmaven.prod.skip=true -P prod
+                """
+            }
+        }
+
+        stage('代码质量分析') {
+            steps {
+                withCredentials([usernamePassword(credentialsId:'e4192807-3f0c-4ec1-b720-5a8bde7bd13d', usernameVariable:'username', passwordVariable:'password', variable: 'sonar凭证')]) {
+                    sh "echo 当前目录 `pwd`"
+                    sh "mvn sonar:sonar  -Dsonar.login=${username} -Dsonar.password=${password} -Dsonar.host.url=http://192.168.0.122:9000 -Dsonar.inclusions=**/*.java,**/*.xml"
+                }
+            }
+        }
+
+        stage('Docker镜像制作') {
+            stages {
+            stage('制作开始') {
+                steps {
+                withCredentials([usernamePassword(credentialsId:'d235191b-5a45-4e71-b478-8df5ed63d3bd', usernameVariable:'username', passwordVariable:'password', variable: '容器镜像服务账号密码')]) {
+                        sh label:'',
+                        script:"""
+                            docker login --username=${username} --password=${password} ${docker_url}
+                            exit
+                        """
+                        echo '制作开始'
+                    }
+                }
+            }
+            
+                stage('镜像制作中(1/2)') {
+                    parallel {
+                        stage('hcwl-gateway') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker build --rm -t ${docker_url}/${docker_space}/${project_name_1}:${_version} ${project_name_1}/
+                                    exit
+                                """
+                            }
+                        }
+                        stage('hcwl-auth') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker build --rm -t ${docker_url}/${docker_space}/${project_name_2}:${_version} ${project_name_2}/
+                                    exit
+                                """
+                            }
+                        }
+					}
+                }
+
+                stage('镜像制作中(2/2)') {
+                    parallel {
+                        stage('hcwl-module-cloud') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker build --rm -t ${docker_url}/${docker_space}/${project_name_3}:${_version} hcwl-modules/${project_name_3}/
+                                    exit
+                                """
+                            }
+                        }
+                        stage('hcwl-module-finance') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker build --rm -t ${docker_url}/${docker_space}/${project_name_4}:${_version} hcwl-modules/${project_name_4}/
+                                    exit
+                                """
+                            }
+                        }
+                        stage('hcwl-module-job') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker build --rm -t ${docker_url}/${docker_space}/${project_name_5}:${_version} hcwl-modules/${project_name_5}/
+                                    exit
+                                """
+                            }
+                        }
+                        stage('hcwl-module-stu') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker build --rm -t ${docker_url}/${docker_space}/${project_name_6}:${_version} hcwl-modules/${project_name_6}/
+                                    exit
+                                """
+                            }
+                        }
+                        stage('hcwl-module-system') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker build --rm -t ${docker_url}/${docker_space}/${project_name_7}:${_version} hcwl-modules/${project_name_7}/
+                                    exit
+                                """
+                            }
+                        }
+					}
+                }
+
+
+                stage('镜像上传中(1/2)') {
+                    parallel {
+                        stage('hcwl-gateway') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker push ${docker_url}/${docker_space}/${project_name_1}:${_version}
+                                    exit
+                                """
+                            }
+                        }
+                        stage('hcwl-auth') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker push ${docker_url}/${docker_space}/${project_name_2}:${_version}
+                                    exit
+                                """
+                            }
+                        }
+                    }
+                }
+
+                stage('镜像上传中(2/2)') {
+                    parallel {
+                        stage('hcwl-module-cloud') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker push ${docker_url}/${docker_space}/${project_name_3}:${_version}
+                                    exit
+                                """
+                            }
+                        }
+                        stage('hcwl-module-finance') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker push ${docker_url}/${docker_space}/${project_name_4}:${_version}
+                                    exit
+                                """
+                            }
+                        }
+                        stage('hcwl-module-job') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker push ${docker_url}/${docker_space}/${project_name_5}:${_version}
+                                    exit
+                                """
+                            }
+                        }
+                        stage('hcwl-module-stu') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker push ${docker_url}/${docker_space}/${project_name_6}:${_version}
+                                    exit
+                                """
+                            }
+                        }
+                        stage('hcwl-module-system') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker push ${docker_url}/${docker_space}/${project_name_7}:${_version}
+                                    exit
+                                """
+                            }
+                        }
+                    }
+                }
+
+                stage('上传最新镜像(1/2)') {
+                    parallel {
+                        stage('hcwl-gateway') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker tag ${docker_url}/${docker_space}/${project_name_1}:${_version} ${docker_url}/${docker_space}/${project_name_1}:latest
+                                    docker push ${docker_url}/${docker_space}/${project_name_1}:latest
+                                    docker rmi ${docker_url}/${docker_space}/${project_name_1}:latest
+                                    docker rmi  ${docker_url}/${docker_space}/${project_name_1}:${_version}
+                                    exit
+                                """
+                            }
+                        }
+                        stage('hcwl-auth') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker tag ${docker_url}/${docker_space}/${project_name_2}:${_version}  ${docker_url}/${docker_space}/${project_name_2}:latest
+                                    docker push ${docker_url}/${docker_space}/${project_name_2}:latest
+                                    docker rmi ${docker_url}/${docker_space}/${project_name_2}:latest
+                                    docker rmi ${docker_url}/${docker_space}/${project_name_2}:${_version}
+                                    exit
+                                """
+                            }
+                        }
+                    }
+                }
+
+                stage('上传最新镜像(2/2)') {
+                    parallel {
+                        stage('hcwl-module-cloud') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker tag ${docker_url}/${docker_space}/${project_name_3}:${_version} ${docker_url}/${docker_space}/${project_name_3}:latest
+                                    docker push ${docker_url}/${docker_space}/${project_name_3}:latest
+                                    docker rmi ${docker_url}/${docker_space}/${project_name_3}:latest
+                                    docker rmi ${docker_url}/${docker_space}/${project_name_3}:${_version}
+                                    exit
+                                """
+                            }
+                        }
+                        stage('hcwl-module-finance') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker tag ${docker_url}/${docker_space}/${project_name_4}:${_version}  ${docker_url}/${docker_space}/${project_name_4}:latest
+                                    docker push ${docker_url}/${docker_space}/${project_name_4}:latest
+                                    docker rmi ${docker_url}/${docker_space}/${project_name_4}:latest
+                                    docker rmi ${docker_url}/${docker_space}/${project_name_4}:${_version}
+                                    exit
+                                """
+                            }
+                        }
+                        stage('hcwl-module-job') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker tag ${docker_url}/${docker_space}/${project_name_5}:${_version} ${docker_url}/${docker_space}/${project_name_5}:latest
+                                    docker push ${docker_url}/${docker_space}/${project_name_5}:latest
+                                    docker rmi ${docker_url}/${docker_space}/${project_name_5}:latest
+                                    docker rmi ${docker_url}/${docker_space}/${project_name_5}:${_version}
+                                    exit
+                                """
+                            }
+                        }
+                        stage('hcwl-module-stu') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker tag ${docker_url}/${docker_space}/${project_name_6}:${_version}  ${docker_url}/${docker_space}/${project_name_6}:latest
+                                    docker push ${docker_url}/${docker_space}/${project_name_6}:latest
+                                    docker rmi ${docker_url}/${docker_space}/${project_name_6}:latest
+                                    docker rmi ${docker_url}/${docker_space}/${project_name_6}:${_version}
+                                    exit
+                                """
+                            }
+                        }
+                        stage('hcwl-module-system') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker tag ${docker_url}/${docker_space}/${project_name_7}:${_version} ${docker_url}/${docker_space}/${project_name_7}:latest
+                                    docker push ${docker_url}/${docker_space}/${project_name_7}:latest
+                                    docker rmi ${docker_url}/${docker_space}/${project_name_7}:latest
+                                    docker rmi ${docker_url}/${docker_space}/${project_name_7}:${_version}
+                                    exit
+                                """
+                            }
+                        }
+                    }
+                }
+
+                stage('镜像上传完毕') {
+                    steps {
+                        sh label:'',
+                        script:"""
+                            docker logout ${docker_url}
+                            exit
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('项目部署') {
+            stages {
+                stage('部署开始') {
+                steps {
+                    withCredentials([usernamePassword(credentialsId:'d235191b-5a45-4e71-b478-8df5ed63d3bd', usernameVariable:'username', passwordVariable:'password', variable: '容器镜像服务账号密码')]) {
+                        sh label:'',
+                        script:"""
+                            sshpass -p ${target_password} ssh -tt -p ${target_port} -o StrictHostKeyChecking=no ${target_user}@${target_ip} << reallsh
+                            sudo docker login --username=${username} --password=${password} ${docker_url}
+                            exit
+                            reallsh
+                        """
+                        }
+                    }
+                }
+                stage('服务部署中(1/2)') {
+                    parallel {
+                        stage('hcwl-gateway') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    sshpass -p ${target_password} ssh -tt -p ${target_port} -o StrictHostKeyChecking=no ${target_user}@${target_ip} << reallsh
+                                    sudo docker rm -f ${project_name_1}
+                                    sudo docker rmi ${docker_url}/${docker_space}/${project_name_1}:latest
+                                    sudo docker pull ${docker_url}/${docker_space}/${project_name_1}:latest
+                                    sudo docker run -itd --name ${project_name_1} -p ${project_port_1}:${project_port_1} --restart always ${docker_url}/${docker_space}/${project_name_1}:latest --spring.profiles.active=prod
+                                    exit
+                                    reallsh
+                                """
+                            }
+                        }
+                        stage('hcwl-auth') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    sshpass -p ${target_password} ssh -tt -p ${target_port} -o StrictHostKeyChecking=no ${target_user}@${target_ip} << reallsh
+                                    sudo docker rm -f ${project_name_2}
+                                    sudo docker rmi ${docker_url}/${docker_space}/${project_name_2}:latest
+                                    sudo docker pull ${docker_url}/${docker_space}/${project_name_2}:latest
+                                    sudo docker run -itd --name ${project_name_2} -p ${project_port_2}:${project_port_2} --restart always ${docker_url}/${docker_space}/${project_name_2}:latest --spring.profiles.active=prod
+                                    exit
+                                    reallsh
+                                """
+                            }
+                        }
+                    }
+                }
+                stage('服务部署中(2/2)') {
+                    parallel {
+                        stage('hcwl-module-cloud') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    sshpass -p ${target_password} ssh -tt -p ${target_port} -o StrictHostKeyChecking=no ${target_user}@${target_ip} << reallsh
+                                    sudo docker rm -f ${project_name_3}
+                                    sudo docker rmi ${docker_url}/${docker_space}/${project_name_3}:latest
+                                    sudo docker pull ${docker_url}/${docker_space}/${project_name_3}:latest
+                                    sudo docker run -itd --name ${project_name_3} -p ${project_port_3}:${project_port_3} --restart always ${docker_url}/${docker_space}/${project_name_3}:latest --spring.profiles.active=prod
+                                    exit
+                                    reallsh
+                                """
+                            }
+                        }
+                        stage('hcwl-module-finance') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    sshpass -p ${target_password} ssh -tt -p ${target_port} -o StrictHostKeyChecking=no ${target_user}@${target_ip} << reallsh
+                                    sudo docker rm -f ${project_name_4}
+                                    sudo docker rmi ${docker_url}/${docker_space}/${project_name_4}:latest
+                                    sudo docker pull ${docker_url}/${docker_space}/${project_name_4}:latest
+                                    sudo docker run -itd --name ${project_name_4} -p ${project_port_4}:${project_port_4} --restart always ${docker_url}/${docker_space}/${project_name_4}:latest --spring.profiles.active=prod
+                                    exit
+                                    reallsh
+                                """
+                            }
+                        }
+                        stage('hcwl-module-job') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    sshpass -p ${target_password} ssh -tt -p ${target_port} -o StrictHostKeyChecking=no ${target_user}@${target_ip} << reallsh
+                                    sudo docker rm -f ${project_name_5}
+                                    sudo docker rmi ${docker_url}/${docker_space}/${project_name_5}:latest
+                                    sudo docker pull ${docker_url}/${docker_space}/${project_name_5}:latest
+                                    sudo docker run -itd --name ${project_name_5} -p ${project_port_5}:${project_port_5} --restart always ${docker_url}/${docker_space}/${project_name_5}:latest --spring.profiles.active=prod
+                                    exit
+                                    reallsh
+                                """
+                            }
+                        }
+                        stage('hcwl-module-stu') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    sshpass -p ${target_password} ssh -tt -p ${target_port} -o StrictHostKeyChecking=no ${target_user}@${target_ip} << reallsh
+                                    sudo docker rm -f ${project_name_6}
+                                    sudo docker rmi ${docker_url}/${docker_space}/${project_name_6}:latest
+                                    sudo docker pull ${docker_url}/${docker_space}/${project_name_6}:latest
+                                    sudo docker run -itd --name ${project_name_6} -p ${project_port_6}:${project_port_6} --restart always ${docker_url}/${docker_space}/${project_name_6}:latest --spring.profiles.active=prod
+                                    exit
+                                    reallsh
+                                """
+                            }
+                        }
+                        stage('hcwl-module-system') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    sshpass -p ${target_password} ssh -tt -p ${target_port} -o StrictHostKeyChecking=no ${target_user}@${target_ip} << reallsh
+                                    sudo docker rm -f ${project_name_7}
+                                    sudo docker rmi ${docker_url}/${docker_space}/${project_name_7}:latest
+                                    sudo docker pull ${docker_url}/${docker_space}/${project_name_7}:latest
+                                    sudo docker run -itd --name ${project_name_7} -p ${project_port_7}:${project_port_7} --restart always ${docker_url}/${docker_space}/${project_name_7}:latest --spring.profiles.active=prod
+                                    exit
+                                    reallsh
+                                """
+                            }
+                        }
+                    }
+                }
+                stage('项目部署完毕') {
+                    steps {
+                        sh label:'',
+                        script:"""
+                            sshpass -p ${target_password} ssh -tt -p ${target_port} -o StrictHostKeyChecking=no ${target_user}@${target_ip} << reallsh
+                            sudo docker logout ${docker_url}
+                            exit
+                            reallsh
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            deleteDir()
+        }
+    }
+}

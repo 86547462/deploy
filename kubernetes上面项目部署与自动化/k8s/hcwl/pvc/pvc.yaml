@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: "" # 如果没有 StorageClass 可以留空
+  resources:
+    requests:
+      storage: 5Gi # 同 PV 中的存储大小一致

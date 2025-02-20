@@ -1,0 +1,33 @@
+http://192.168.1.42:8080/
+
+u:admin
+p:hongyang
+
+docker pull jenkins/jenkins:2.397
+
+docker run -d \
+    -u root \
+    -p 18080:8080 \
+    -p 50000:50000 \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v /usr/bin/docker:/usr/bin/docker \
+    -v /usr/local/docker/jenkins:/var/jenkins_home \
+    -v /etc/localtime:/etc/localtime \
+    --restart=always \
+    --name=jenkins \
+    --network=jenkins \
+    2fef055370ae
+
+
+代码审查工具
+mkdir -p /usr/local/docker/sonarqube/{sonarqube_conf,sonarqube_extensions,sonarqube_logs,sonarqube_data}
+chmod 777 -R /usr/local/docker/sonarqube
+
+docker run  -itd  --name sonarqube \
+    -p 9000:9000 \
+    -v /usr/local/docker/sonarqube/sonarqube_conf:/opt/sonarqube/conf \
+    -v /usr/local/docker/sonarqube/sonarqube_extensions:/opt/sonarqube/extensions \
+    -v /usr/local/docker/sonarqube/sonarqube_logs:/opt/sonarqube/logs \
+    -v /usr/local/docker/sonarqube/sonarqube_data:/opt/sonarqube/data \
+    sonarqube:8.9.0-community
+

@@ -1,0 +1,230 @@
+git_branch = "*/master"
+git_timeout = "120"
+git_url = "http://192.168.0.122:8001/gitlab-instance-6af9e62b/hcwl-cloud.git"
+docker_url = "registry.cn-hangzhou.aliyuncs.com"
+docker_space = "zk_project"
+// 部署目标服务器
+target_ip = "192.168.0.5"
+target_port = "22"
+target_user = "root"
+target_password = "hongyang@2007"
+// 部署通知，多个","隔开
+mail_recipients_success = "86547462@qq.com"
+mail_recipients_fail = "86547462@qq.com"
+
+def createVersion() {
+    return new Date().format('yyyyMMddHHmmss') + "_${env.BUILD_ID}"
+}
+
+def projectPort() {
+    def ports = [
+        "hcwl-module-cloud": "9204",
+        "hcwl-module-finance": "9203",
+        "hcwl-module-job": "9998",
+        "hcwl-module-stu": "9202",
+        "hcwl-module-system": "9201"
+    ]
+    return ports[env.project_name] ?: "未知"
+}
+
+pipeline {
+    agent any
+
+    environment {
+        //版本
+        _version = createVersion()
+        //端口
+        project_port=projectPort()
+    }
+
+    stages {
+        
+        stage('环境检测') {
+            steps {
+                sh label: '',
+                script: '''
+                    whoami
+                    echo "Current time is: ${_version}"
+                    mvn -v
+                    git version
+                    java -version
+                    docker -v
+                '''
+            }
+        }
+        stage('代码获取') {
+            steps {
+                checkout([
+                $class: 'GitSCM',
+                branches: [[name: "${git_branch}"]],
+                extensions: [[
+                    $class: 'CloneOption', noTags: false, reference: '',
+                    shallow: false, timeout: "${git_timeout}"
+                ]],
+                userRemoteConfigs: [[credentialsId: "7f4a58cf-4349-477e-8c1b-cc04d3095267", url: "${git_url}"]]
+                ])
+            }
+        }
+
+        stage('项目构建') {
+            steps {
+                sh label:'',
+                script:"""
+                    mvn clean install -pl hcwl-modules/${project_name} -am '-Dmaven.prod.skip=true' -P prod
+                """
+            }
+        }
+
+        stage('代码质量分析') {
+            steps {
+                withCredentials([usernamePassword(credentialsId:'e4192807-3f0c-4ec1-b720-5a8bde7bd13d', usernameVariable:'username', passwordVariable:'password', variable: 'sonar凭证')]) {
+                    sh "echo 当前目录 `pwd`"
+                    sh "cd hcwl-modules/${project_name} && mvn sonar:sonar  -Dsonar.login=${username} -Dsonar.password=${password} -Dsonar.host.url=http://192.168.0.122:9000 -Dsonar.inclusions=**/*.java,**/*.xml"
+                }
+            }
+        }
+        
+        stage('Docker镜像制作') {
+            stages {
+                stage('制作开始') {
+                    steps {
+                        withCredentials([usernamePassword(credentialsId:'d235191b-5a45-4e71-b478-8df5ed63d3bd', usernameVariable:'username', passwordVariable:'password', variable: '容器镜像服务账号密码')]) {
+                            sh label:'',
+                            script:"""
+                                docker login --username=${username} --password=${password} ${docker_url}
+                                """
+                            echo '制作开始'
+                                }
+                            }
+                    }
+                stage('镜像制作中') {
+                    parallel {
+                        stage('镜像制作中') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker build --rm -t ${docker_url}/${docker_space}/${project_name}:${_version} hcwl-modules/${project_name}/
+                                    exit
+                                """
+                                }
+                            }
+					}
+                }
+                stage('镜像上传中') {
+                    parallel {
+                        stage('镜像上传中') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker push ${docker_url}/${docker_space}/${project_name}:${_version}
+                                    exit
+                                """
+                            }
+                        }
+                    }   
+                }
+                stage('上传最新镜像') {
+                    parallel {
+                        stage('上传最新镜像') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    docker tag ${docker_url}/${docker_space}/${project_name}:${_version} ${docker_url}/${docker_space}/${project_name}:latest
+                                    docker push ${docker_url}/${docker_space}/${project_name}:latest
+                                    docker rmi ${docker_url}/${docker_space}/${project_name}:latest
+                                    docker rmi ${docker_url}/${docker_space}/${project_name}:${_version}
+                                    exit
+                                """
+                            }
+                        }
+                    }
+                }
+
+                stage('镜像上传完毕') {
+                    steps {
+                        sh label:'',
+                        script:"""
+                            docker logout ${docker_url}
+                            exit
+                        """
+                    }
+                }
+            }        
+            }
+
+        stage('项目部署') {
+            stages {
+                stage('部署开始') {
+                steps {
+                    withCredentials([usernamePassword(credentialsId:'d235191b-5a45-4e71-b478-8df5ed63d3bd', usernameVariable:'username', passwordVariable:'password', variable: '容器镜像服务账号密码')]) {
+                        sh label:'',
+                        script:"""
+                            sshpass -p ${target_password} ssh -tt -p ${target_port} -o StrictHostKeyChecking=no ${target_user}@${target_ip} << reallsh
+                            docker login --username=${username} --password=${password} ${docker_url}
+                            exit
+                            reallsh
+                        """
+                        }
+                    }
+                }
+                stage('服务部署中') {
+                    parallel {
+                        stage('服务部署中') {
+                            steps {
+                                sh label:'',
+                                script:"""
+                                    sshpass -p ${target_password} ssh -tt -p ${target_port} -o StrictHostKeyChecking=no ${target_user}@${target_ip} << reallsh
+                                    docker rm -f ${project_name}
+                                    docker rmi ${docker_url}/${docker_space}/${project_name}:latest
+                                    docker pull ${docker_url}/${docker_space}/${project_name}:latest
+                                    docker run -itd --name ${project_name} -p ${project_port}:${project_port}  --restart always ${docker_url}/${docker_space}/${project_name}:latest  --spring.profiles.active=prod
+                                    exit
+                                    reallsh
+                                """
+                            }
+                        }
+                    }
+                }
+                stage('项目部署完毕') {
+                    steps {
+                        sh label:'',
+                        script:"""
+                            sshpass -p ${target_password} ssh -tt -p ${target_port} -o StrictHostKeyChecking=no ${target_user}@${target_ip} << reallsh
+                            docker logout ${docker_url}
+                            exit
+                            reallsh
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            deleteDir()
+        }
+        success {
+            emailext (
+                subject: "Pipeline构建成功 - ${project_name}",
+                body: """
+                    <p>您好,</p>
+                    <p>项目${project_name}的Pipeline构建已成功。</p>
+                    <p>请知悉。</p>
+                    """,
+                to: "${mail_recipients_success}"
+            )
+        }
+        failure {
+            emailext (
+                subject: "Pipeline构建失败 - ${project_name}",
+                body: """
+                    <p>您好,</p>
+                    <p>项目${project_name}的Pipeline构建失败，请及时查看并处理。</p>
+                    <p>请知悉。</p>
+                    """,
+                to: "${mail_recipients_fail}"
+            )
+        }
+    }
+}

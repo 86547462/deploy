@@ -1,0 +1,81 @@
+git_auth = "zhoukun"
+git_branch = "*/master"
+git_timeout = "120"
+git_url = "http://192.168.0.122:8001/gitlab-instance-6af9e62b/hcwl-vue.git"
+project_name = "hcwl-vue"
+remote_host = "27.37.68.89"
+mail_recipients_success = "86547462@qq.com"
+mail_recipients_fail = "86547462@qq.com"
+
+pipeline {
+    agent any
+    stages {
+        stage('环境检测') {
+            steps {
+                sh label: '检测环境',
+                script: '''
+                    git version
+                    npm -v
+                    npm config get registry
+                '''
+            }
+        }
+        stage('拉取代码') {
+            steps {
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: "${git_branch}"]],
+                    extensions: [[
+                        $class: 'CloneOption', noTags: false, reference: '',
+                        shallow: false, timeout: "${git_timeout}"
+                    ]],
+                    userRemoteConfigs: [[credentialsId: "7f4a58cf-4349-477e-8c1b-cc04d3095267", url: "${git_url}"]]
+                ])
+            }
+        }
+        stage('构建项目') {
+            steps {
+                sh label: '构建项目',
+                script: '''
+                    npm install
+                    npm run build
+                '''
+            }
+        }
+        stage('部署项目') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: '760c37f4-c062-4278-af1b-72c60caeb1a9', passwordVariable: 'SSH_PASSWORD', usernameVariable: 'SSH_USERNAME')]) {   
+                    sh "rsync -ravz --progress --delete -e 'sshpass -p ${SSH_PASSWORD} ssh -o StrictHostKeyChecking=no' ./dist/ ${SSH_USERNAME}@${remote_host}:/home/www/vue/dist/"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            deleteDir()
+        }
+        success {
+            emailext (
+                subject: "Pipeline构建成功 - ${project_name}",
+                body: """
+                    <p>您好,</p>
+                    <p>项目${project_name}的Pipeline构建已成功。</p>
+                    <p>请知悉。</p>
+                    """,
+                to: "${mail_recipients_success}"
+            )
+        }
+        failure {
+            emailext (
+                subject: "Pipeline构建失败 - ${project_name}",
+                body: """
+                    <p>您好,</p>
+                    <p>项目${project_name}的Pipeline构建失败，请及时查看并处理。</p>
+                    <p>请知悉。</p>
+                    """,
+                to: "${mail_recipients_fail}"
+            )
+        }
+    }
+}

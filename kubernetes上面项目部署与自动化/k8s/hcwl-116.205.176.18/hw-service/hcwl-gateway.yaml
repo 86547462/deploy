@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: hcwl
+  name: hcwl-gateway
+  labels:
+    app: hcwl-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hcwl-gateway
+  template:
+    metadata:
+      labels:
+        app: hcwl-gateway
+    spec:
+      imagePullSecrets:
+        - name: aliyun-registry-secret
+      restartPolicy: Always
+      containers:
+        - name: hcwl-gateway
+          imagePullPolicy: Always
+          image: swr.cn-north-4.myhuaweicloud.com/zk-project/hcwl-gateway:latest
+          ports:
+            - containerPort: 8080
+              name: http8080
+              protocol: TCP
+              hostPort: 8080
+          volumeMounts:
+            - mountPath: /hcwl
+              name: nfs-volume
+              readOnly: false
+      volumes:
+        - name: nfs-volume
+          persistentVolumeClaim:
+            claimName: nfs-pvc

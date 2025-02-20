@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: hcwl
+  name: hcwl-module-education
+  labels:
+    app: hcwl-module-education
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hcwl-module-education
+  template:
+    metadata:
+      labels:
+        app: hcwl-module-education
+    spec:
+      imagePullSecrets:
+        - name: aliyun-registry-secret
+      restartPolicy: Always
+      nodeSelector:
+        service.role: app-node  
+      containers:
+        - name: hcwl-module-education
+          imagePullPolicy: Always
+          image: registry.cn-shenzhen.aliyuncs.com/k8s-hcwl-cloud/hcwl-module-education:latest
+          ports:
+            - containerPort: 9204
+              name: http9204
+              protocol: TCP
+              hostPort: 9204
+          volumeMounts:
+            - mountPath: /hcwl
+              name: nfs-volume
+              readOnly: false
+      volumes:
+        - name: nfs-volume
+          persistentVolumeClaim:
+            claimName: nfs-pvc

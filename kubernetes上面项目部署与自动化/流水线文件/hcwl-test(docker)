@@ -1,0 +1,229 @@
+git_branch = "*/dev-2"
+git_timeout = "120"
+git_url = "https://codeup.aliyun.com/65791b094e02d56555c42113/HCWL.git"
+// docekr配置
+docker_url = "registry.cn-hongkong.aliyuncs.com"
+docker_space = "hcwl-test"
+
+// 部署目标服务器
+target_host = "192.168.10.151"
+target_port = "22"
+
+// 部署通知，多个","隔开
+mail_recipients_success = "86547462@qq.com"
+mail_recipients_fail = "86547462@qq.com"
+
+def createVersion() {
+    return new Date().format('yyyyMMddHHmmss') + "_${env.BUILD_ID}"
+}
+def randomInRange(min, max) {
+    Random rand = new Random()
+    return rand.nextInt((max - min) + 1) + min
+}
+pipeline {
+    agent any
+
+    environment {
+        _version = createVersion()
+    }
+
+    stages {
+        
+        stage('环境检测') {
+            steps {
+                sh label: '',
+                script: '''
+                    whoami
+                    git version
+                    java -version
+                    mvn -v
+                    docker -v
+                '''
+            }
+        }
+
+        stage('代码获取') {
+            steps {
+                checkout([
+                $class: 'GitSCM',
+                branches: [[name: "${git_branch}"]],
+                extensions: [[
+                    $class: 'CloneOption', noTags: false, reference: '',
+                    shallow: false, timeout: "${git_timeout}"
+                ]],
+                userRemoteConfigs: [[credentialsId: "817b2598-d02f-414f-b779-602e6a9923a0", url: "${git_url}"]]
+                ])
+            }
+        }
+
+        stage('项目构建') {
+            steps {
+                sh label:'',
+                script:"""
+                    mvn clean install '-Dmaven.test.skip=true'   -P test1
+                """
+            }
+        }
+        stage('Docker镜像制作') {
+            stages {
+                stage('制作开始') {
+                    steps {
+                        withCredentials([usernamePassword(credentialsId: 'd235191b-5a45-4e71-b478-8df5ed63d3bd', usernameVariable: 'username', passwordVariable: 'password', variable: '容器镜像服务账号密码')]) {
+                            sh """
+                                docker login --username=${username} --password=${password} ${docker_url}
+                                echo '制作开始'
+                            """
+                        }
+                    }
+                }
+
+
+            stage('镜像制作中') {
+                steps {
+                    script {
+                        params.project_names.tokenize(',').each { projectName ->
+                            echo "当前处理项目: ${projectName}"
+                            echo "当前工作目录: pwd"
+                            sh """
+                                docker build --rm -t ${docker_url}/${docker_space}/${projectName}:${_version} hcwl-modules/${projectName}/
+                                exit 0
+                            """
+                        }
+                    }
+                }
+            }
+            stage('镜像上传中') {
+                steps {
+                    script {
+                        params.project_names.tokenize(',').each { projectName ->
+                            echo "当前处理项目: ${projectName}"
+                            echo "当前工作目录: pwd"
+                            sh """
+                                docker push ${docker_url}/${docker_space}/${projectName}:${_version}
+                                exit 0
+                            """
+                        }
+                    }
+                }
+            }
+            stage('上传最新镜像') {
+                steps {
+                    script {
+                        params.project_names.tokenize(',').each { projectName ->
+                            echo "当前处理项目: ${projectName}"
+                            echo "当前工作目录: pwd"
+                            sh """
+                                docker tag ${docker_url}/${docker_space}/${projectName}:${_version} ${docker_url}/${docker_space}/${projectName}:latest
+                                docker push ${docker_url}/${docker_space}/${projectName}:latest
+                                docker rmi ${docker_url}/${docker_space}/${projectName}:latest
+                                docker rmi  ${docker_url}/${docker_space}/${projectName}:${_version}
+                                exit 0
+                            """
+                        }
+                    }
+                }
+            }        
+
+        stage('镜像上传完毕') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'd235191b-5a45-4e71-b478-8df5ed63d3bd', usernameVariable: 'username', passwordVariable: 'password', variable: '容器镜像服务账号密码')]) {
+                        sh """
+                            docker logout ${docker_url}
+                            exit 0
+                        """
+                    }
+                    echo '镜像上传完成'
+                    }
+                }
+            }
+        }
+
+        stage('项目部署') {
+            stages {
+                stage('部署开始') {
+                steps {
+                withCredentials([usernamePassword(credentialsId: '41f450a2-c0f9-4329-829b-6bf87c2378df', passwordVariable: 'SSH_PASSWORD', usernameVariable: 'SSH_USERNAME', variable: '部署目标服务器账号密码')]) {   
+                    
+                    withCredentials([usernamePassword(credentialsId:'d235191b-5a45-4e71-b478-8df5ed63d3bd', usernameVariable:'username', passwordVariable:'password', variable: '容器镜像服务账号密码')]) {
+                        sh label:'',
+                        script:"""
+                            sshpass -p ${SSH_PASSWORD} ssh -tt -p ${target_port} -o StrictHostKeyChecking=no ${SSH_USERNAME}@${target_host} << reallsh
+                            sudo docker login --username=${username} --password=${password} ${docker_url}
+                            exit
+                            reallsh
+                        """
+                        }
+
+                }
+                    }
+                }
+                stage('服务部署中') {
+                    steps {
+                        withCredentials([usernamePassword(credentialsId: '41f450a2-c0f9-4329-829b-6bf87c2378df', passwordVariable: 'SSH_PASSWORD', usernameVariable: 'SSH_USERNAME', variable: '部署目标服务器账号密码')]) {   
+                            script {
+                                params.project_names.tokenize(',').each { projectName ->
+                                    // 生成一个随机端口号，在可用端口范围内
+                                    def randomPort = randomInRange(10000, 49151) 
+
+                                    echo "当前处理项目: ${projectName}"
+                                    echo "当前工作目录: pwd"
+                                    echo "为项目 ${projectName} 分配的随机端口: ${randomPort}"
+
+                                    sh """
+                                        sshpass -p ${SSH_PASSWORD} ssh -tt -p ${target_port} -o StrictHostKeyChecking=no ${SSH_USERNAME}@${target_host} << reallsh
+                                            sudo docker rm -f ${projectName}
+                                            sudo docker rmi ${docker_url}/${docker_space}/${projectName}:latest
+                                            sudo docker pull ${docker_url}/${docker_space}/${projectName}:latest
+                                            sudo docker run -itd --name ${projectName} -p ${randomPort}:8080 -v /hcwl/:/hcwl/ --restart always ${docker_url}/${docker_space}/${projectName}:latest --spring.profiles.active=test1
+                                            exit 0
+                                            reallsh
+                                        """
+                                }
+                            }
+                        }
+                    }
+                }
+                stage('项目部署完毕') {
+                    steps {
+                        withCredentials([usernamePassword(credentialsId: '41f450a2-c0f9-4329-829b-6bf87c2378df', passwordVariable: 'SSH_PASSWORD', usernameVariable: 'SSH_USERNAME', variable: '部署目标服务器账号密码')]) {   
+                            sh """
+                            sshpass -p ${SSH_PASSWORD} ssh -tt -p ${target_port} -o StrictHostKeyChecking=no ${SSH_USERNAME}@${target_host} << reallsh
+                            sudo docker logout ${docker_url}
+                            exit
+                            reallsh
+                            """
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            deleteDir()
+        }
+        success {
+            emailext (
+                subject: "Pipeline构建成功 - ${params.project_names}",
+                body: """
+                    <p>您好,</p>
+                    <p>项目${params.project_names}的Pipeline构建已成功。</p>
+                    <p>请知悉。</p>
+                    """,
+                to: "${mail_recipients_success}"
+            )
+        }
+        failure {
+            emailext (
+                subject: "Pipeline构建失败 - ${params.project_names}",
+                body: """
+                    <p>您好,</p>
+                    <p>项目${params.project_names}的Pipeline构建失败，请及时查看并处理。</p>
+                    <p>请知悉。</p>
+                    """,
+                to: "${mail_recipients_fail}"
+            )
+        }
+    }
+}

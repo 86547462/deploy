@@ -1,0 +1,100 @@
+git_branch = "*/master"
+git_timeout = "120"
+git_url = "https://codeup.aliyun.com/65791b094e02d56555c42113/HCWL.git"
+
+// 部署目标服务器
+remote_host = "120.79.129.144"
+
+// 部署通知，多个","隔开
+mail_recipients_success = "86547462@qq.com"
+mail_recipients_fail = "86547462@qq.com"
+
+
+pipeline {
+    agent any
+
+    stages {
+        
+        stage('环境检测') {
+            steps {
+                sh label: '',
+                script: '''
+                    whoami
+                    git version
+                    java -version
+                    mvn -v
+                '''
+            }
+        }
+
+        stage('代码获取') {
+            steps {
+                checkout([
+                $class: 'GitSCM',
+                branches: [[name: "${git_branch}"]],
+                extensions: [[
+                    $class: 'CloneOption', noTags: false, reference: '',
+                    shallow: false, timeout: "${git_timeout}"
+                ]],
+                userRemoteConfigs: [[credentialsId: "817b2598-d02f-414f-b779-602e6a9923a0", url: "${git_url}"]]
+                ])
+            }
+        }
+
+        stage('项目构建') {
+            steps {
+                sh label:'',
+                script:"""
+                    mvn clean install '-Dmaven.test.skip=true'   -P prod
+                """
+            }
+        }
+        stage('项目部署') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: '760c37f4-c062-4278-af1b-72c60caeb1a9', passwordVariable: 'SSH_PASSWORD', usernameVariable: 'SSH_USERNAME')]) {   
+                    script {
+                        //多个项目（参数值）部署
+                        echo "Selected project names: ${params.project_names}"
+                        params.project_names.tokenize(',').each { projectName ->
+                            echo "Processing project: ${projectName}"
+                            sh "echo 当前目录 `pwd`"
+                            //上传jar包到指定服务器
+                            sh "rsync -ravz --progress --delete -e 'sshpass -p ${SSH_PASSWORD} ssh -o StrictHostKeyChecking=no' ./hcwl-modules/${projectName}/target/*.jar ${SSH_USERNAME}@${remote_host}:/opt/hcwl/${projectName}"
+                            // 在每次上传完文件后执行 启动命令
+                            sh "sshpass -p ${SSH_PASSWORD} ssh -o StrictHostKeyChecking=no ${SSH_USERNAME}@${remote_host} 'cd /opt/hcwl/${projectName} && sh deploy.sh restart'"
+                        }
+                    }
+                }
+            }
+        }
+
+    }
+
+    post {
+        always {
+            deleteDir()
+        }
+        success {
+            emailext (
+                subject: "Pipeline构建成功 - ${params.project_names}",
+                body: """
+                    <p>您好,</p>
+                    <p>项目${params.project_names}的Pipeline构建已成功。</p>
+                    <p>请知悉。</p>
+                    """,
+                to: "${mail_recipients_success}"
+            )
+        }
+        failure {
+            emailext (
+                subject: "Pipeline构建失败 - ${params.project_names}",
+                body: """
+                    <p>您好,</p>
+                    <p>项目${params.project_names}的Pipeline构建失败，请及时查看并处理。</p>
+                    <p>请知悉。</p>
+                    """,
+                to: "${mail_recipients_fail}"
+            )
+        }
+    }
+}

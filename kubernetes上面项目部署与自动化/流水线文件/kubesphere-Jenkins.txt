@@ -1,0 +1,161 @@
+def HCWL_SERVICE_MAP = [:];
+HCWL_SERVICE_MAP.put("hcwl-gateway", "hcwl-gateway/");
+HCWL_SERVICE_MAP.put("hcwl-auth", "hcwl-auth/");
+HCWL_SERVICE_MAP.put("hcwl-module-cloud", "hcwl-modules/hcwl-module-cloud/");
+HCWL_SERVICE_MAP.put("hcwl-module-education", "hcwl-modules/hcwl-module-education/");
+HCWL_SERVICE_MAP.put("hcwl-module-finance", "hcwl-modules/hcwl-module-finance/");
+HCWL_SERVICE_MAP.put("hcwl-module-on-school", "hcwl-modules/hcwl-module-on-school/");
+HCWL_SERVICE_MAP.put("hcwl-module-redisson", "hcwl-modules/hcwl-module-redisson/");
+HCWL_SERVICE_MAP.put("hcwl-module-stu", "hcwl-modules/hcwl-module-stu/");
+HCWL_SERVICE_MAP.put("hcwl-module-system", "hcwl-modules/hcwl-module-system/");
+HCWL_SERVICE_MAP.put("hcwl-module-workflow", "hcwl-modules/hcwl-module-workflow/");
+HCWL_SERVICE_MAP.put("hcwl-module-job", "hcwl-modules/hcwl-module-job/");
+
+def createVersion() {
+    return new Date().format('yyyyMMddHHmmss') + "_${env.BUILD_ID}"
+}
+pipeline {
+  agent {
+    node {
+      label 'jdk11'
+    }
+
+  }
+  stages {
+    stage('拉取代码') {
+      agent none
+      steps {
+        container('maven') {
+          git(url: 'https://codeup.aliyun.com/65791b094e02d56555c42113/HCWL.git', credentialsId: 'git-id', branch: 'master', changelog: true, poll: false)
+          sh 'ls -al'
+        }
+
+      }
+    }
+
+    stage('代码编译') {
+      agent none
+      steps {
+        container('maven') {
+          echo '代码编译'
+          sh '''
+            mvn clean package '-Dmaven.test.skip=true' -P prod
+          '''
+        }
+
+      }
+    }
+
+    stage('构建镜像') {
+      agent none
+      steps {
+        container('maven') {
+          echo '构建镜像'
+          script {
+            def selectedServices = params.SERVICE_TO_BUILD.tokenize(',')
+            for (service in selectedServices) {
+              //获取目录地址
+              def serviceDirPath = HCWL_SERVICE_MAP[service]
+              if(serviceDirPath){
+                //镜像名称
+                def imageName = "${DOCKER_REGISTRY}/${IMAGE_NAME_PREFIX}/${service}:${_version}"
+                sh """
+                cd ${serviceDirPath}
+                docker build -f Dockerfile-k8s-hw -t ${imageName} .
+                """
+              }else{
+                echo "未能找到指定的服务"
+              }
+
+            }
+          }
+
+          sh 'docker images'
+        }
+
+      }
+    }
+
+    stage('harbor镜像登陆') {
+      agent none
+      steps {
+        container('maven') {
+          withCredentials([usernamePassword(credentialsId: 'harbor-id', usernameVariable: 'username', passwordVariable: 'password', variable: '容器镜像服务账号密码')]) {
+            sh 'docker login --username=${username} --password=${password} ${DOCKER_REGISTRY}'
+            echo '登陆成功'
+          }
+
+        }
+
+      }
+    }
+
+    stage('镜像推送') {
+      agent none
+      steps {
+        container('maven') {
+          echo '镜像推送'
+          script {
+            def selectedServices = params.SERVICE_TO_BUILD.tokenize(',')
+            for (service in selectedServices) {
+              //获取目录地址
+              def serviceDirPath = HCWL_SERVICE_MAP[service]
+              if(serviceDirPath){
+                //镜像名称
+                def imageName = "${DOCKER_REGISTRY}/${IMAGE_NAME_PREFIX}/${service}:${_version}"
+                def imageLatest = "${DOCKER_REGISTRY}/${IMAGE_NAME_PREFIX}/${service}:latest"
+                sh """
+                docker push ${imageName}
+                docker tag ${imageName} ${imageLatest}
+                docker push ${imageLatest}
+                docker rmi ${imageName}
+                docker rmi ${imageLatest}
+                """
+              }
+            }
+          }
+
+        }
+
+      }
+    }
+
+
+    
+      stage('项目部署') {
+        agent none
+        steps {
+          container('maven') {
+            // input(id: '是否部署到正式服务?', message: '是否部署到正式服务?')
+            withCredentials([kubeconfigContent(credentialsId: 'kube-id', variable: 'KUBECONFIG_CONFIG')]) {
+          script {
+            def selectedServices = params.SERVICE_TO_BUILD.tokenize(',')
+            for (service in selectedServices) {
+              sh 'mkdir -p ~/.kube/'
+              sh 'echo "$KUBECONFIG_CONFIG" > ~/.kube/config'
+              sh """
+              kubectl rollout restart deployment -n hcwl ${service}
+              exit 0
+              """
+              }
+            }
+          }
+            }
+          }
+        }
+      
+  }
+  environment {
+    DOCKER_CREDENTIAL_ID = 'dockerhub-id'
+    GITHUB_CREDENTIAL_ID = 'github-id'
+    KUBECONFIG_CREDENTIAL_ID = 'demo-kubeconfig'
+    REGISTRY = 'docker.io'
+    DOCKERHUB_NAMESPACE = 'docker_username'
+    GITHUB_ACCOUNT = 'kubesphere'
+    APP_NAME = 'devops-java-sample'
+    _version = createVersion()
+    DOCKER_REGISTRY = '192.168.0.100:30002'
+    IMAGE_NAME_PREFIX = 'hcwl'
+    target_host = '192.168.0.100'
+  }
+}

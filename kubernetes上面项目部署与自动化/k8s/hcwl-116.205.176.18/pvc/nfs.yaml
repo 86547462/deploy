@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  namespace: hcwl
+  name: nfs-pvc
+spec:
+  capacity:
+    storage: 5Gi # 根据实际大小调整
+  accessModes:
+    - ReadWriteMany # 允许多个读写访问
+  nfs:
+    path: /hcwl
+    server: 192.168.0.100
+  persistentVolumeReclaimPolicy: Retain # 可选，默认为 Delete，为 Retain
+# PersistentVolumeClaim 配置
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  namespace: hcwl
+  name: nfs-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 5Gi

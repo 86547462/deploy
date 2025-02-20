@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: hcwl
+  name: hcwl-module-cloud
+  labels:
+    app: hcwl-module-cloud
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hcwl-module-cloud
+  template:
+    metadata:
+      labels:
+        app: hcwl-module-cloud
+    spec:
+      imagePullSecrets:
+        - name: aliyun-registry-secret
+      restartPolicy: Always
+      nodeSelector:
+        service.role: app-node  
+      containers:
+        - name: hcwl-module-cloud
+          imagePullPolicy: Always
+          image: registry.cn-shenzhen.aliyuncs.com/k8s-hcwl-cloud/hcwl-module-cloud:latest
+          ports:
+            - containerPort: 9202
+              name: http9202
+              protocol: TCP
+              hostPort: 9202
+          volumeMounts:
+            - mountPath: /hcwl
+              name: nfs-volume
+              readOnly: false
+      volumes:
+        - name: nfs-volume
+          persistentVolumeClaim:
+            claimName: nfs-pvc

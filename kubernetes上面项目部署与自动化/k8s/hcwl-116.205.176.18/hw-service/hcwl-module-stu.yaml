@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: hcwl
+  name: hcwl-module-stu
+  labels:
+    app: hcwl-module-stu
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hcwl-module-stu
+  template:
+    metadata:
+      labels:
+        app: hcwl-module-stu
+    spec:
+      imagePullSecrets:
+        - name: aliyun-registry-secret
+      restartPolicy: Always
+      containers:
+        - name: hcwl-module-stu
+          imagePullPolicy: Always
+          image: swr.cn-north-4.myhuaweicloud.com/zk-project/hcwl-module-stu:latest
+          ports:
+            - containerPort: 9203
+              name: http9203
+              protocol: TCP
+              hostPort: 9203
+          volumeMounts:
+            - mountPath: /hcwl
+              name: nfs-volume
+              readOnly: false
+      volumes:
+        - name: nfs-volume
+          persistentVolumeClaim:
+            claimName: nfs-pvc

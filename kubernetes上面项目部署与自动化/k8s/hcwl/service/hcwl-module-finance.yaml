@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: hcwl
+  name: hcwl-module-finance
+  labels:
+    app: hcwl-module-finance
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hcwl-module-finance
+  template:
+    metadata:
+      labels:
+        app: hcwl-module-finance
+    spec:
+      imagePullSecrets:
+        - name: aliyun-registry-secret
+      restartPolicy: Always
+      containers:
+        - name: hcwl-module-finance
+          imagePullPolicy: Always
+          image: registry-vpc.cn-shenzhen.aliyuncs.com/k8s-hcwl-cloud/hcwl-module-finance:latest
+          ports:
+            - containerPort: 9208
+              name: http9208
+              protocol: TCP
+              hostPort: 9208
+          volumeMounts:
+            - mountPath: /hcwl
+              name: nfs-volume
+              readOnly: false
+      volumes:
+        - name: nfs-volume
+          persistentVolumeClaim:
+            claimName: nfs-pvc

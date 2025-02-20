@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: hcwl
+  name: hcwl-module-job
+  labels:
+    app: hcwl-module-job
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hcwl-module-job
+  template:
+    metadata:
+      labels:
+        app: hcwl-module-job
+    spec:
+      imagePullSecrets:
+        - name: aliyun-registry-secret
+      restartPolicy: Always
+      nodeSelector:
+        service.role: app-node  
+      containers:
+        - name: hcwl-module-job
+          imagePullPolicy: Always
+          image: registry.cn-shenzhen.aliyuncs.com/k8s-hcwl-cloud/hcwl-module-job:latest
+          ports:
+            - containerPort: 9998
+              name: http9998
+              protocol: TCP
+              hostPort: 9998
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 1Gi
